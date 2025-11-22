@@ -209,7 +209,7 @@ __marimo__/
 # Large data files (exceed GitHub size limits)
 data/raw/*.csv
 data/processed/*.parquet
-models/*.pkl
+# Note: models/*.pkl is allowed - model file is small enough for GitHub
 
 # Python cache
 __pycache__/
