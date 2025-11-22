@@ -93,3 +93,4 @@ If port 8501 is already in use:
 - Hover over charts for detailed information
 - Export data tables by using Streamlit's built-in download options
 
+
