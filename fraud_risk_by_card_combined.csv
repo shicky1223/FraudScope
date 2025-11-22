@@ -1,0 +1,11 @@
+card4,card6,Avg_Fraud_Probability,Actual_Fraud_Rate,Transaction_Count
+discover,credit,0.0719,0.0793,6304
+mastercard,credit,0.0678,0.0692,50772
+visa,credit,0.0666,0.0681,83732
+american express,credit,0.0346,0.0286,8175
+american express,debit,0.0289,0.0347,144
+visa,debit,0.0253,0.0255,301023
+discover,debit,0.0247,0.0403,347
+mastercard,debit,0.0234,0.0216,138415
+visa,charge card,0.0072,0.0,12
+mastercard,debit or credit,0.0038,0.0,30

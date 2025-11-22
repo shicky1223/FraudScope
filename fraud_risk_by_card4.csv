@@ -1,0 +1,5 @@
+card4,Avg_Fraud_Probability,Actual_Fraud_Rate,Transaction_Count
+discover,0.0694,0.0773,6651
+mastercard,0.0353,0.0343,189217
+american express,0.0346,0.0287,8328
+visa,0.0342,0.0348,384767
