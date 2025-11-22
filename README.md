@@ -84,33 +84,45 @@ The most important features for fraud detection (XGBoost):
 ```
 FraudScope/
 ├── README.md                          # Project documentation
-├── modeling_evaluation.ipynb          # Main analysis notebook
-├── clean_train.parquet                # Preprocessed training data
-├── train_transaction.csv              # Training transaction data
-├── train_identity.csv                 # Training identity data
-├── test_transaction.csv               # Test transaction data
-├── test_identity.csv                  # Test identity data
+├── LICENSE                            # License file
 │
-├── model_comparison.csv               # Model performance comparison
+├── data/
+│   ├── raw/                           # Raw data files
+│   │   ├── train_transaction.csv      # Training transaction data
+│   │   ├── train_identity.csv         # Training identity data
+│   │   ├── test_transaction.csv       # Test transaction data
+│   │   └── test_identity.csv          # Test identity data
+│   └── processed/                     # Processed data files
+│       └── clean_train.parquet        # Preprocessed training data
 │
-├── roc_curves.png                     # ROC curve comparison
-├── precision_recall_curves.png        # Precision-Recall curves
-├── confusion_matrices.png             # Confusion matrices for all models
-├── feature_importance.png             # Top 20 feature importance
+├── notebooks/
+│   └── modeling_evaluation.ipynb      # Main analysis notebook
 │
-├── fraud_risk_by_region.csv           # Regional fraud risk analysis
-├── fraud_risk_by_region_heatmap.png   # Regional risk heatmap
-├── fraud_risk_by_month.csv            # Monthly fraud patterns
-├── fraud_risk_by_day_of_week.csv      # Day-of-week patterns
-├── fraud_risk_over_time.png           # Temporal trend visualizations
+├── app.py                             # Streamlit dashboard application
+├── requirements.txt                   # Python dependencies for dashboard
 │
-├── fraud_risk_by_card4.csv            # Card network analysis
-├── fraud_risk_by_card6.csv            # Card type analysis
-├── fraud_risk_by_card_combined.csv    # Combined card analysis
-├── fraud_risk_by_card.png             # Card risk visualizations
+├── models/                            # Saved models
+│   └── xgboost_fraud_model.pkl       # Trained XGBoost model
 │
-└── fraud_risk_by_amount.csv           # Transaction amount analysis
-    fraud_risk_by_amount.png           # Amount risk visualizations
+├── results/                           # Analysis results (CSV files)
+│   ├── model_comparison.csv           # Model performance comparison
+│   ├── fraud_risk_by_region.csv       # Regional fraud risk analysis
+│   ├── fraud_risk_by_month.csv        # Monthly fraud patterns
+│   ├── fraud_risk_by_day_of_week.csv  # Day-of-week patterns
+│   ├── fraud_risk_by_card4.csv        # Card network analysis
+│   ├── fraud_risk_by_card6.csv        # Card type analysis
+│   ├── fraud_risk_by_card_combined.csv # Combined card analysis
+│   └── fraud_risk_by_amount.csv       # Transaction amount analysis
+│
+└── visualizations/                    # Generated plots and charts
+    ├── roc_curves.png                 # ROC curve comparison
+    ├── precision_recall_curves.png    # Precision-Recall curves
+    ├── confusion_matrices.png         # Confusion matrices for all models
+    ├── feature_importance.png          # Top 20 feature importance
+    ├── fraud_risk_by_region_heatmap.png # Regional risk heatmap
+    ├── fraud_risk_over_time.png       # Temporal trend visualizations
+    ├── fraud_risk_by_card.png         # Card risk visualizations
+    └── fraud_risk_by_amount.png       # Amount risk visualizations
 ```
 
 ## Usage
@@ -123,7 +135,7 @@ FraudScope/
    ```
 
 2. **Execute the Notebook**:
-   - Open `modeling_evaluation.ipynb` in Jupyter Notebook or JupyterLab
+   - Open `notebooks/modeling_evaluation.ipynb` in Jupyter Notebook or JupyterLab
    - Run all cells to:
      - Load and preprocess data
      - Train ensemble models
@@ -132,9 +144,10 @@ FraudScope/
      - Create visualizations
 
 3. **View Results**:
-   - Model comparison: `model_comparison.csv`
-   - Visualizations: PNG files in the project directory
-   - Analysis tables: CSV files for each analysis dimension
+   - Model comparison: `results/model_comparison.csv`
+   - Visualizations: PNG files in the `visualizations/` directory
+   - Analysis tables: CSV files in the `results/` directory
+   - Saved models: `models/xgboost_fraud_model.pkl`
 
 ### Data Preprocessing
 
@@ -144,8 +157,40 @@ The notebook handles:
 - Feature engineering and selection
 - Train-test split (80-20) with stratification
 
+### Running the Dashboard
+
+The FraudScope dashboard is an interactive web application built with Streamlit that provides comprehensive fraud detection analysis and visualization.
+
+1. **Install Dashboard Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Launch the Dashboard**:
+   ```bash
+   streamlit run app.py
+   ```
+   
+   The dashboard will open in your default web browser at `http://localhost:8501`
+
+3. **Dashboard Features**:
+   - **Overview**: Quick status and metrics overview
+   - **Model Performance**: Detailed model comparison and performance metrics
+   - **Fraud Risk Analysis**: Interactive exploration of fraud patterns by:
+     - Region (geographic risk mapping)
+     - Time patterns (monthly and day-of-week trends)
+     - Card type and issuer (card4, card6, and combinations)
+     - Transaction amount ranges
+   - **Feature Importance**: Top predictive features from XGBoost model
+
+4. **Prerequisites for Dashboard**:
+   - Trained model saved at `models/xgboost_fraud_model.pkl` (run the notebook first)
+   - Analysis results in the `results/` directory (generated by the notebook)
+   - Test data in `data/raw/test_transaction.csv`
+
 ## Requirements
 
+### For Notebook Analysis
 - Python 3.7+
 - pandas
 - numpy
@@ -154,6 +199,12 @@ The notebook handles:
 - scikit-learn
 - xgboost
 - scipy
+- joblib
+
+### For Dashboard
+- streamlit
+- plotly
+- (All dependencies listed in `requirements.txt`)
 
 ## Results Summary
 
