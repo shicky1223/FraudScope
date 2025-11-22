@@ -320,11 +320,15 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     labels=dict(x="Predicted", y="Actual", color="Count"),
                     x=['Not Fraud', 'Fraud'],
                     y=['Not Fraud', 'Fraud'],
-                    color_continuous_scale='Blues',
-                    text_auto=True,
-                    aspect="auto"
+                    color_continuous_scale='Blues'
                 )
-                fig.update_layout(title="XGBoost Confusion Matrix")
+                # Add text annotations manually to avoid deprecation warning
+                fig.update_traces(text=cm_data.values, texttemplate='%{text}', textfont={"size": 12})
+                fig.update_layout(
+                    title="XGBoost Confusion Matrix",
+                    autosize=True,
+                    yaxis=dict(scaleanchor="x", scaleratio=1)
+                )
                 st.plotly_chart(fig, width='stretch')
                 
                 # Extract values for display
