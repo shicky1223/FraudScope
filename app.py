@@ -325,7 +325,7 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     aspect="auto"
                 )
                 fig.update_layout(title="XGBoost Confusion Matrix")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Extract values for display
                 if cm_data.shape == (2, 2):
@@ -369,7 +369,7 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
         if col in display_df.columns:
             display_df[col] = display_df[col].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
     
-    st.dataframe(display_df, use_container_width=True)
+    st.dataframe(display_df, width='stretch')
     
     # Visualizations
     col1, col2 = st.columns(2)
@@ -384,7 +384,7 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
             color_continuous_scale='Viridis'
         )
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         st.subheader("F1-Score Comparison")
@@ -396,7 +396,7 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
             color_continuous_scale='Plasma'
         )
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     # Best model highlight
     if 'XGBoost' in model_comparison.index:
@@ -469,7 +469,7 @@ def show_region_analysis(results):
             title="Top 20 High-Risk Regions"
         )
         fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         # Format dataframe for display with region codes
@@ -483,7 +483,7 @@ def show_region_analysis(results):
         display_regions['Avg_Fraud_Probability'] = display_regions['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Actual_Fraud_Rate'] = display_regions['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Transaction_Count'] = display_regions['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-        st.dataframe(display_regions, use_container_width=True, hide_index=True)
+        st.dataframe(display_regions, width='stretch', hide_index=True)
     
     # Summary statistics
     st.markdown("#### Regional Risk Statistics")
@@ -518,14 +518,14 @@ def show_time_analysis(results):
                 title="Fraud Risk by Month"
             )
             fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Format dataframe for display
             display_month = month_data.copy()
             display_month['Avg_Fraud_Probability'] = display_month['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_month['Actual_Fraud_Rate'] = display_month['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_month['Transaction_Count'] = display_month['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_month, use_container_width=True)
+            st.dataframe(display_month, width='stretch')
         else:
             st.warning("Monthly data not available.")
     
@@ -545,14 +545,14 @@ def show_time_analysis(results):
                 title="Fraud Risk by Day of Week"
             )
             fig.update_layout(height=400, xaxis={'categoryorder': 'array', 'categoryarray': days_order})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Format dataframe for display
             display_day = day_data_ordered.copy()
             display_day['Avg_Fraud_Probability'] = display_day['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_day['Actual_Fraud_Rate'] = display_day['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_day['Transaction_Count'] = display_day['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_day, use_container_width=True)
+            st.dataframe(display_day, width='stretch')
         else:
             st.warning("Day of week data not available.")
 
@@ -578,14 +578,14 @@ def show_card_analysis(results):
                 title="Fraud Risk by Card Network"
             )
             fig.update_layout(height=400, xaxis={'categoryorder': 'total descending'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Format dataframe for display
             display_card4 = card4_data.copy()
             display_card4['Avg_Fraud_Probability'] = display_card4['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card4['Actual_Fraud_Rate'] = display_card4['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card4['Transaction_Count'] = display_card4['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_card4, use_container_width=True)
+            st.dataframe(display_card4, width='stretch')
         else:
             st.warning("Card network data not available.")
     
@@ -602,14 +602,14 @@ def show_card_analysis(results):
                 title="Fraud Risk by Card Type"
             )
             fig.update_layout(height=400, xaxis={'categoryorder': 'total descending'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Format dataframe for display
             display_card6 = card6_data.copy()
             display_card6['Avg_Fraud_Probability'] = display_card6['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card6['Actual_Fraud_Rate'] = display_card6['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card6['Transaction_Count'] = display_card6['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_card6, use_container_width=True)
+            st.dataframe(display_card6, width='stretch')
         else:
             st.warning("Card type data not available.")
     
@@ -629,14 +629,14 @@ def show_card_analysis(results):
                 title="Top 15 High-Risk Card Combinations"
             )
             fig.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Format dataframe for display
             display_combined = top_combined.copy()
             display_combined['Avg_Fraud_Probability'] = display_combined['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_combined['Actual_Fraud_Rate'] = display_combined['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_combined['Transaction_Count'] = display_combined['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_combined, use_container_width=True)
+            st.dataframe(display_combined, width='stretch')
         else:
             st.warning("Combined card data not available.")
 
@@ -666,7 +666,7 @@ def show_amount_analysis(results):
             title="Fraud Risk by Transaction Amount Range"
         )
         fig.update_layout(height=500, xaxis={'categoryorder': 'total descending'})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         # Format dataframe for display
@@ -676,7 +676,7 @@ def show_amount_analysis(results):
         display_amount['Transaction_Count'] = display_amount['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
         if 'Avg_Amount' in display_amount.columns:
             display_amount['Avg_Amount'] = display_amount['Avg_Amount'].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-        st.dataframe(display_amount, use_container_width=True)
+        st.dataframe(display_amount, width='stretch')
     
     # Insights
     st.markdown("#### Key Insights")
@@ -732,13 +732,13 @@ def show_feature_importance(model):
                 title=f"Top {n_features} Most Important Features"
             )
             fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         with col2:
             # Format dataframe for display
             display_features = top_features.copy()
             display_features['importance'] = display_features['importance'].apply(lambda x: f'{x:.6f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_features, use_container_width=True)
+            st.dataframe(display_features, width='stretch')
         
         # Summary statistics
         st.markdown("#### Feature Importance Statistics")
