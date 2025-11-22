@@ -279,10 +279,6 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
             # For now, we'll use a placeholder - in production, you'd need to preprocess test_data
             # the same way as training data
             st.info("💡 **Note**: To compute threshold-based metrics, the test data needs to be preprocessed the same way as training data. This requires running predictions in the notebook first.")
-    elif model is not None and test_data is None:
-        st.markdown("---")
-        st.subheader("🔧 Threshold-Based Performance (XGBoost)")
-        st.info("ℹ️ **Test data not available**: Threshold-based metrics require test data. The dashboard works with pre-computed results from the modeling notebook.")
             
             # If we have predictions saved, we can use them
             # For now, show the threshold slider impact conceptually
@@ -307,6 +303,10 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     st.metric("Base F1-Score (0.5 threshold)", f"{base_f1:.4f}")
         except Exception as e:
             st.warning(f"Could not compute threshold-based metrics: {e}")
+    elif model is not None and test_data is None:
+        st.markdown("---")
+        st.subheader("🔧 Threshold-Based Performance (XGBoost)")
+        st.info("ℹ️ **Test data not available**: Threshold-based metrics require test data. The dashboard works with pre-computed results from the modeling notebook.")
     
     # Confusion Matrix for XGBoost
     if 'XGBoost' in model_comparison.index:
