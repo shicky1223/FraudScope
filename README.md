@@ -161,6 +161,8 @@ The notebook handles:
 
 The FraudScope dashboard is an interactive web application built with Streamlit that provides comprehensive fraud detection analysis and visualization.
 
+**🌐 Live Dashboard**: [https://fraudscope.streamlit.app](https://fraudscope.streamlit.app)
+
 1. **Install Dashboard Dependencies**:
    ```bash
    pip install -r requirements.txt
