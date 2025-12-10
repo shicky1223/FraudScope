@@ -70,6 +70,252 @@ def load_test_data():
             return None
     return None
 
+@st.cache_data
+def load_processed_data():
+    """Load processed training data (includes merged identity data with DeviceType/DeviceInfo)"""
+    try:
+        processed_path = DATA_DIR / "processed" / "clean_train.parquet"
+        if processed_path.exists():
+            return pd.read_parquet(processed_path)
+        return None
+    except Exception as e:
+        st.error(f"Error loading processed data: {e}")
+        return None
+
+@st.cache_data
+def load_training_data_stats():
+    """Load training data to get feature statistics for preprocessing"""
+    try:
+        # Try loading processed data first
+        train_path = DATA_DIR / "processed" / "clean_train.parquet"
+        if train_path.exists():
+            df = pd.read_parquet(train_path)
+        else:
+            # Fallback to raw data
+            train_path = DATA_DIR / "raw" / "train_transaction.csv"
+            if train_path.exists():
+                df = pd.read_csv(train_path, low_memory=False)
+            else:
+                return None
+        
+        # Prepare features (same as training)
+        X = df.drop(['isFraud', 'TransactionID'], axis=1, errors='ignore')
+        
+        # Store original columns BEFORE feature engineering (for user input matching)
+        original_columns_before_fe = list(X.columns)
+        
+        # Calculate top devices from training data for DeviceInfo grouping
+        top_devices = None
+        if 'DeviceInfo' in X.columns:
+            deviceinfo_counts = X['DeviceInfo'].value_counts()
+            top_n_devices = 50  # Keep top 50 most common devices
+            top_devices = set(deviceinfo_counts.head(top_n_devices).index)
+        
+        # Apply DeviceInfo feature engineering (same as in notebook)
+        X = apply_deviceinfo_feature_engineering(X, top_devices=top_devices)
+        
+        # Calculate statistics (after feature engineering)
+        numeric_cols = X.select_dtypes(include=[np.number]).columns
+        categorical_cols = X.select_dtypes(exclude=[np.number]).columns
+        
+        # Get medians for numeric columns
+        numeric_medians = X[numeric_cols].median().to_dict()
+        
+        # Get min/max for numeric columns (for sliders)
+        numeric_mins = X[numeric_cols].min().to_dict()
+        numeric_maxs = X[numeric_cols].max().to_dict()
+        
+        # Get modes for categorical columns
+        categorical_modes = {}
+        for col in categorical_cols:
+            mode_val = X[col].mode()
+            categorical_modes[col] = mode_val[0] if len(mode_val) > 0 else 'unknown'
+        
+        # Get feature names after encoding (for matching)
+        X_filled = X.copy()
+        X_filled[numeric_cols] = X_filled[numeric_cols].fillna(X_filled[numeric_cols].median())
+        for col in categorical_cols:
+            X_filled[col] = X_filled[col].fillna(categorical_modes[col])
+        
+        X_encoded = pd.get_dummies(X_filled, drop_first=True)
+        
+        # Ensure feature names are strings (not numpy strings or other types)
+        feature_names = [str(f) for f in X_encoded.columns]
+        
+        return {
+            'numeric_medians': numeric_medians,
+            'numeric_mins': numeric_mins,
+            'numeric_maxs': numeric_maxs,
+            'categorical_modes': categorical_modes,
+            'feature_names': feature_names,  # Ensure strings
+            'original_columns': original_columns_before_fe,  # Columns BEFORE feature engineering
+            'numeric_cols': list(numeric_cols),
+            'categorical_cols': list(categorical_cols),
+            'top_devices': top_devices  # Store for use in preprocessing
+        }
+    except Exception as e:
+        st.error(f"Error loading training data stats: {e}")
+        return None
+
+def apply_deviceinfo_feature_engineering(df, top_devices=None):
+    """Apply DeviceInfo feature engineering (same as in notebook)
+    
+    Args:
+        df: DataFrame to process
+        top_devices: Set of top device names from training data (optional)
+    """
+    if 'DeviceInfo' not in df.columns:
+        return df
+    
+    # 1. Extract OS Type from DeviceInfo
+    def extract_os(device_info):
+        if pd.isna(device_info) or device_info == '':
+            return 'Unknown'
+        device_str = str(device_info).lower()
+        if 'windows' in device_str or 'win' in device_str:
+            return 'Windows'
+        elif 'ios' in device_str or 'iphone' in device_str or 'ipad' in device_str:
+            return 'iOS'
+        elif 'android' in device_str or 'build/' in device_str:
+            return 'Android'
+        elif 'macos' in device_str or 'mac' in device_str:
+            return 'macOS'
+        elif 'linux' in device_str:
+            return 'Linux'
+        else:
+            return 'Other'
+    
+    df['DeviceInfo_OS'] = df['DeviceInfo'].apply(extract_os)
+    
+    # 2. Extract Device Brand (common brands)
+    def extract_brand(device_info):
+        if pd.isna(device_info) or device_info == '':
+            return 'Unknown'
+        device_str = str(device_info).lower()
+        # Common brands
+        brands = {
+            'samsung': ['sm-', 'samsung', 'galaxy'],
+            'apple': ['iphone', 'ipad', 'ios device'],
+            'huawei': ['huawei', 'honor'],
+            'xiaomi': ['xiaomi', 'redmi', 'mi '],
+            'lg': ['lg-', 'lg '],
+            'motorola': ['moto', 'motorola'],
+            'nokia': ['nokia'],
+            'sony': ['sony', 'xperia'],
+            'oneplus': ['oneplus'],
+            'google': ['pixel', 'nexus']
+        }
+        for brand, keywords in brands.items():
+            if any(keyword in device_str for keyword in keywords):
+                return brand.title()
+        return 'Other'
+    
+    df['DeviceInfo_Brand'] = df['DeviceInfo'].apply(extract_brand)
+    
+    # 3. Group rare DeviceInfo values (keep top N, group rest as 'Other')
+    if top_devices is None:
+        # Calculate from current data if not provided
+        if 'DeviceInfo' in df.columns:
+            deviceinfo_counts = df['DeviceInfo'].value_counts()
+            top_n_devices = 50  # Keep top 50 most common devices
+            top_devices = set(deviceinfo_counts.head(top_n_devices).index)
+        else:
+            top_devices = set()
+    
+    def group_rare_devices(device_info):
+        if pd.isna(device_info) or device_info == '':
+            return 'Unknown'
+        if device_info in top_devices:
+            return device_info
+        else:
+            return 'Other_Rare_Device'
+    
+    if 'DeviceInfo' in df.columns:
+        df['DeviceInfo_Grouped'] = df['DeviceInfo'].apply(group_rare_devices)
+    
+    # 4. Create binary flag for high-risk devices
+    high_risk_devices = [
+        'Blade L3 Build/KOT49H',
+        'NOKIA',
+        'Nexus 6 Build/MOB30M',
+        'G3123 Build/40.0.A.6.175',
+        'VS5012 Build/NRD90M',
+        'Z835 Build/NMF26V',
+        'Z813 Build/LMY47O',
+        'SM-N920A Build/MMB29K',
+        'hi6210sft Build/MRA58K',
+        'Lenovo YT3-850M Build/MMB29M'
+    ]
+    df['DeviceInfo_HighRisk'] = df['DeviceInfo'].isin(high_risk_devices).astype(int)
+    
+    # Keep original DeviceInfo column (model was trained with both raw and engineered features)
+    # The original DeviceInfo will be one-hot encoded along with the engineered features
+    
+    return df
+
+def preprocess_transaction(transaction_data, training_stats):
+    """Preprocess a single transaction to match model input format"""
+    if training_stats is None:
+        return None
+    
+    # Create a dataframe with one row
+    df_input = pd.DataFrame([transaction_data])
+    
+    # Fill missing numeric columns with medians
+    for col in training_stats['numeric_cols']:
+        if col not in df_input.columns:
+            df_input[col] = training_stats['numeric_medians'].get(col, 0)
+        else:
+            df_input[col] = df_input[col].fillna(training_stats['numeric_medians'].get(col, 0))
+    
+    # Fill missing categorical columns with modes
+    for col in training_stats['categorical_cols']:
+        if col not in df_input.columns:
+            df_input[col] = training_stats['categorical_modes'].get(col, 'unknown')
+        else:
+            df_input[col] = df_input[col].fillna(training_stats['categorical_modes'].get(col, 'unknown'))
+    
+    # Ensure all original columns are present (before feature engineering)
+    # Note: DeviceInfo might be in input but not in original_columns if it was dropped
+    for col in training_stats['original_columns']:
+        if col not in df_input.columns:
+            if col in training_stats['numeric_cols']:
+                df_input[col] = training_stats['numeric_medians'].get(col, 0)
+            else:
+                df_input[col] = training_stats['categorical_modes'].get(col, 'unknown')
+    
+    # Reorder columns to match training data (only columns that exist in both)
+    available_cols = [col for col in training_stats['original_columns'] if col in df_input.columns]
+    df_input = df_input[available_cols]
+    
+    # Add DeviceInfo if it's in input but not in original_columns (for feature engineering)
+    if 'DeviceInfo' in transaction_data and 'DeviceInfo' not in df_input.columns:
+        df_input['DeviceInfo'] = transaction_data.get('DeviceInfo', 'Unknown')
+    
+    # Apply DeviceInfo feature engineering BEFORE one-hot encoding
+    # Use top_devices from training data if available
+    top_devices = training_stats.get('top_devices', None)
+    df_input = apply_deviceinfo_feature_engineering(df_input, top_devices=top_devices)
+    
+    # One-hot encode categorical variables
+    df_encoded = pd.get_dummies(df_input, drop_first=True)
+    
+    # Align with training feature names (add missing columns, remove extra)
+    feature_names = [str(f) for f in training_stats['feature_names']]  # Ensure strings
+    df_encoded.columns = [str(c) for c in df_encoded.columns]  # Ensure strings
+    
+    for feature in feature_names:
+        if feature not in df_encoded.columns:
+            df_encoded[feature] = 0
+    
+    # Remove any extra columns (keep only features the model expects)
+    df_encoded = df_encoded[[f for f in feature_names if f in df_encoded.columns]]
+    
+    # Ensure correct order and add any still missing
+    df_encoded = df_encoded.reindex(columns=feature_names, fill_value=0)
+    
+    return df_encoded
+
 def format_region_code(region_code):
     """Format region code for display"""
     if pd.isna(region_code) or str(region_code) == 'nan':
@@ -134,7 +380,7 @@ def main():
         st.header("Navigation")
         page = st.radio(
             "Select View",
-            ["Overview", "Model Performance", "Fraud Risk Analysis", "Feature Importance"]
+            ["Overview", "Model Performance", "Fraud Risk Analysis", "Feature Importance", "Real-Time Predictions"]
         )
         
         st.markdown("---")
@@ -182,6 +428,8 @@ def main():
         show_fraud_risk_analysis(results)
     elif page == "Feature Importance":
         show_feature_importance(model)
+    elif page == "Real-Time Predictions":
+        show_realtime_predictions(model)
 
 def show_overview(model, test_data, results):
     """Show dashboard overview"""
@@ -424,7 +672,7 @@ def show_fraud_risk_analysis(results):
     
     analysis_type = st.selectbox(
         "Select Analysis Type",
-        ["Region", "Time Patterns", "Card Type", "Transaction Amount"]
+        ["Region", "Time Patterns", "Card Type", "Transaction Amount", "Device"]
     )
     
     if analysis_type == "Region":
@@ -435,6 +683,8 @@ def show_fraud_risk_analysis(results):
         show_card_analysis(results)
     elif analysis_type == "Transaction Amount":
         show_amount_analysis(results)
+    elif analysis_type == "Device":
+        show_device_analysis(results)
 
 def show_region_analysis(results):
     """Show fraud risk by region"""
@@ -696,6 +946,183 @@ def show_amount_analysis(results):
     - Transaction Count: {highest_risk['Transaction_Count']:.0f}
     """)
 
+def show_device_analysis(results):
+    """Show fraud risk by device type and device info"""
+    st.subheader("📱 Fraud Risk by Device")
+    
+    st.info("💡 **How to read this**: Higher average fraud probability means transactions from this device type/info are more likely to be fraudulent according to the XGBoost model.")
+    st.markdown("---")
+    
+    # Load processed data which includes merged identity data with DeviceType/DeviceInfo
+    data = load_processed_data()
+    
+    if data is None:
+        st.warning("Processed data not available. Device analysis requires merged transaction and identity data.")
+        st.info("""
+        **To enable device analysis:**
+        1. Run the EDA notebook to create `data/processed/clean_train.parquet`
+        2. This file contains merged transaction and identity data with DeviceType and DeviceInfo columns
+        """)
+        return
+    
+    # Check if DeviceType and DeviceInfo columns exist
+    if 'DeviceType' not in data.columns and 'DeviceInfo' not in data.columns:
+        st.warning("DeviceType or DeviceInfo columns not found in the processed data.")
+        st.info("Please ensure the EDA notebook has been run to merge transaction and identity data.")
+        return
+    
+    tab1, tab2 = st.tabs(["Device Type", "Device Info"])
+    
+    with tab1:
+        if 'DeviceType' in data.columns:
+            st.markdown("#### 📱 Fraud Risk by Device Type")
+            
+            # Calculate fraud risk by device type
+            device_type_analysis = data.groupby('DeviceType')['isFraud'].agg(['mean', 'count']).round(4)
+            device_type_analysis.columns = ['Fraud_Rate', 'Transaction_Count']
+            device_type_counts = data['DeviceType'].value_counts()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Device type distribution
+                fig = px.bar(
+                    x=device_type_counts.index,
+                    y=device_type_counts.values,
+                    labels={'x': 'Device Type', 'y': 'Transaction Count'},
+                    title="Transaction Count by Device Type",
+                    color=device_type_counts.values,
+                    color_continuous_scale='Blues'
+                )
+                fig.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Display statistics with fraud rates
+                st.markdown("#### Device Type Statistics")
+                for device_type in device_type_counts.index:
+                    count = device_type_counts[device_type]
+                    percentage = (count / len(data)) * 100
+                    fraud_rate = device_type_analysis.loc[device_type, 'Fraud_Rate'] * 100
+                    st.metric(
+                        device_type.title(),
+                        f"{count:,}",
+                        delta=f"{fraud_rate:.2f}% fraud rate"
+                    )
+            
+            # Display fraud rate comparison
+            st.markdown("---")
+            st.markdown("#### Fraud Rate by Device Type")
+            display_df = device_type_analysis.copy()
+            display_df['Fraud_Rate_Percent'] = (display_df['Fraud_Rate'] * 100).round(2)
+            display_df = display_df[['Fraud_Rate_Percent', 'Transaction_Count']]
+            display_df.columns = ['Fraud Rate (%)', 'Transaction Count']
+            st.dataframe(display_df, use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("#### Key Insights")
+            if len(device_type_analysis) >= 2:
+                mobile_rate = device_type_analysis.loc['mobile', 'Fraud_Rate'] if 'mobile' in device_type_analysis.index else None
+                desktop_rate = device_type_analysis.loc['desktop', 'Fraud_Rate'] if 'desktop' in device_type_analysis.index else None
+                if mobile_rate and desktop_rate:
+                    risk_ratio = mobile_rate / desktop_rate
+                    st.success(f"""
+                    **Key Finding:**
+                    - **Mobile devices** have **{risk_ratio:.2f}x higher fraud rate** than desktop devices
+                    - Mobile: **{mobile_rate*100:.2f}%** fraud rate
+                    - Desktop: **{desktop_rate*100:.2f}%** fraud rate
+                    
+                    **Recommendation:** Monitor mobile transactions more closely and consider additional verification steps.
+                    """)
+                else:
+                    st.info("Device type analysis shows different fraud rates. Review the data above for insights.")
+            else:
+                st.info("Insufficient device types for comparison. Review the data above for insights.")
+        else:
+            st.warning("DeviceType column not found in the data.")
+    
+    with tab2:
+        if 'DeviceInfo' in data.columns:
+            st.markdown("#### 🔍 Fraud Risk by Device Info")
+            
+            # Show top devices with fraud rates
+            device_info_counts = data['DeviceInfo'].value_counts().head(20)
+            device_info_fraud = data.groupby('DeviceInfo')['isFraud'].agg(['mean', 'count'])
+            device_info_fraud = device_info_fraud[device_info_fraud['count'] >= 10]  # Min 10 transactions
+            device_info_fraud = device_info_fraud.sort_values('mean', ascending=False)
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                fig = px.bar(
+                    x=device_info_counts.values,
+                    y=device_info_counts.index,
+                    orientation='h',
+                    labels={'x': 'Transaction Count', 'y': 'Device Info'},
+                    title="Top 20 Most Common Devices",
+                    color=device_info_counts.values,
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(height=600, yaxis={'categoryorder': 'total ascending'})
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.markdown("#### Device Info Statistics")
+                st.metric("Unique Devices", f"{data['DeviceInfo'].nunique():,}")
+                st.metric("Missing Values", f"{data['DeviceInfo'].isnull().sum():,}")
+                
+                st.markdown("---")
+                st.markdown("#### Top 10 High-Risk Devices")
+                if len(device_info_fraud) > 0:
+                    high_risk_df = device_info_fraud.head(10).copy()
+                    high_risk_df['Fraud_Rate_Percent'] = (high_risk_df['mean'] * 100).round(2)
+                    display_df = pd.DataFrame({
+                        'Device': high_risk_df.index.str[:40],  # Truncate long names
+                        'Fraud Rate (%)': high_risk_df['Fraud_Rate_Percent'].values,
+                        'Count': high_risk_df['count'].values.astype(int)
+                    })
+                    st.dataframe(display_df, hide_index=True, use_container_width=True)
+                else:
+                    st.info("No devices with sufficient transaction count for fraud rate analysis.")
+            
+            st.markdown("---")
+            st.markdown("#### Key Insights")
+            unique_count = data['DeviceInfo'].nunique()
+            if len(device_info_fraud) > 0:
+                highest_risk = device_info_fraud.iloc[0]
+                st.warning(f"""
+                **Key Findings:**
+                - DeviceInfo has **{unique_count:,} unique values** (high cardinality)
+                - Highest risk device: **{device_info_fraud.index[0][:50]}**
+                  - Fraud rate: **{highest_risk['mean']*100:.2f}%**
+                  - Transaction count: **{int(highest_risk['count'])}**
+                
+                **Recommendation:** 
+                - Use feature engineering to extract OS, brand, or group rare devices
+                - Create binary flags for high-risk devices
+                - Consider blocking transactions from known high-risk devices
+                """)
+            else:
+                st.info(f"""
+                DeviceInfo has **{unique_count:,} unique values** (high cardinality).
+                Consider feature engineering to reduce dimensionality while preserving fraud signals.
+                """)
+        else:
+            st.warning("DeviceInfo column not found in the data.")
+    
+    # Feature Engineering Info
+    st.markdown("---")
+    st.markdown("#### 🛠️ Feature Engineering Recommendations")
+    st.info("""
+    The modeling notebook now includes feature engineering for DeviceInfo:
+    - **DeviceInfo_OS**: Extracted operating system (Windows, iOS, Android, macOS, Linux, Other)
+    - **DeviceInfo_Brand**: Extracted device brand (Samsung, Apple, Huawei, etc.)
+    - **DeviceInfo_Grouped**: Grouped rare devices (reduces from 1,786 to ~51 unique values)
+    - **DeviceInfo_HighRisk**: Binary flag for known high-risk devices
+    
+    These engineered features reduce dimensionality while preserving important fraud signals.
+    """)
+
 def show_feature_importance(model):
     """Show feature importance from XGBoost model"""
     st.header("🎯 Feature Importance")
@@ -763,6 +1190,345 @@ def show_feature_importance(model):
     except Exception as e:
         st.error(f"Error extracting feature importance: {e}")
         st.info("The model may not support feature importance extraction.")
+
+def show_realtime_predictions(model):
+    """Show real-time fraud prediction interface"""
+    st.header("⚡ Real-Time Fraud Prediction")
+    st.markdown("Enter transaction details below to get an instant fraud prediction from the XGBoost model.")
+    
+    if model is None:
+        st.error("❌ Model not loaded. Please train and save the model first.")
+        st.info("Run the modeling notebook to train and save the XGBoost model.")
+        return
+    
+    # Load training statistics for preprocessing
+    training_stats = load_training_data_stats()
+    if training_stats is None:
+        st.error("❌ Could not load training data statistics. Please ensure the training data is available.")
+        st.info("The training data is needed to properly preprocess your input.")
+        return
+    
+    st.markdown("---")
+    
+    # Feature selection
+    st.subheader("🔧 Select Features to Include")
+    
+    # Helper function to get slider range for a feature
+    def get_slider_range(feature_name, default_min=None, default_max=None):
+        """Get min/max values for slider, with fallback to defaults"""
+        min_val = training_stats['numeric_mins'].get(feature_name, default_min if default_min is not None else 0.0)
+        max_val = training_stats['numeric_maxs'].get(feature_name, default_max if default_max is not None else 1000.0)
+        # Ensure min < max
+        if min_val >= max_val:
+            max_val = min_val + 1.0
+        return float(min_val), float(max_val)
+    
+    # Define available feature groups
+    feature_groups = {
+        "Basic Information": {
+            "TransactionAmt": {"type": "slider", "label": "Transaction Amount ($)", "default": 100.0, "min": 0.0, "max": 10000.0, "step": 1.0, "help": "The amount of the transaction"},
+            "card4": {"type": "select", "label": "Card Network", "options": ["visa", "mastercard", "discover", "american express"], "help": "The card network/issuer"},
+            "card6": {"type": "select", "label": "Card Type", "options": ["credit", "debit", "charge card", "debit or credit"], "help": "The type of card"},
+            "ProductCD": {"type": "select", "label": "Product Code", "options": ["W", "C", "R", "H", "S"], "help": "Product category code"},
+        },
+        "Geographic Information": {
+            "addr1": {"type": "slider", "label": "Address 1 (Region Code)", "default": 0.0, "min": 0.0, "max": 600.0, "step": 1.0, "help": "Geographic region code (addr1)"},
+            "addr2": {"type": "slider", "label": "Address 2 (Region Code)", "default": 0.0, "min": 0.0, "max": 100.0, "step": 1.0, "help": "Geographic region code (addr2)"},
+        },
+        "Time Information": {
+            "TransactionDT": {"type": "slider", "label": "TransactionDT (seconds from reference)", "default": 86400.0, "min": 0.0, "max": 2592000.0, "step": 3600.0, "help": "Time of transaction in seconds from reference date (2017-12-01)"},
+        },
+        "Top Important Features": {
+            "V258": {"type": "slider", "label": "V258 (Most Important - 17.6%)", "default": float(training_stats['numeric_medians'].get('V258', 0)), "step": 0.01, "help": "Feature V258 - most important predictor (17.6% importance)"},
+            "V201": {"type": "slider", "label": "V201 (5.9% importance)", "default": float(training_stats['numeric_medians'].get('V201', 0)), "step": 0.01, "help": "Feature V201 - second most important (5.9% importance)"},
+            "V149": {"type": "slider", "label": "V149 (5.3% importance)", "default": float(training_stats['numeric_medians'].get('V149', 0)), "step": 0.01, "help": "Feature V149 - third most important (5.3% importance)"},
+            "V70": {"type": "slider", "label": "V70 (3.1% importance)", "default": float(training_stats['numeric_medians'].get('V70', 0)), "step": 0.01, "help": "Feature V70"},
+            "V91": {"type": "slider", "label": "V91 (3.1% importance)", "default": float(training_stats['numeric_medians'].get('V91', 0)), "step": 0.01, "help": "Feature V91"},
+            "V147": {"type": "slider", "label": "V147 (2.6% importance)", "default": float(training_stats['numeric_medians'].get('V147', 0)), "step": 0.01, "help": "Feature V147"},
+            "V172": {"type": "slider", "label": "V172 (2.1% importance)", "default": float(training_stats['numeric_medians'].get('V172', 0)), "step": 0.01, "help": "Feature V172"},
+            "V294": {"type": "slider", "label": "V294 (2.0% importance)", "default": float(training_stats['numeric_medians'].get('V294', 0)), "step": 0.01, "help": "Feature V294"},
+            "V225": {"type": "slider", "label": "V225 (1.5% importance)", "default": float(training_stats['numeric_medians'].get('V225', 0)), "step": 0.01, "help": "Feature V225"},
+            "C14": {"type": "slider", "label": "C14 (1.4% importance)", "default": float(training_stats['numeric_medians'].get('C14', 0)), "step": 0.01, "help": "Feature C14 - important categorical feature"},
+        },
+        "Additional V-Features": {
+            "V29": {"type": "slider", "label": "V29", "default": float(training_stats['numeric_medians'].get('V29', 0)), "step": 0.01, "help": "Feature V29"},
+            "V95": {"type": "slider", "label": "V95", "default": float(training_stats['numeric_medians'].get('V95', 0)), "step": 0.01, "help": "Feature V95"},
+            "V62": {"type": "slider", "label": "V62", "default": float(training_stats['numeric_medians'].get('V62', 0)), "step": 0.01, "help": "Feature V62"},
+            "V187": {"type": "slider", "label": "V187", "default": float(training_stats['numeric_medians'].get('V187', 0)), "step": 0.01, "help": "Feature V187"},
+        },
+        "Additional C-Features": {
+            "C12": {"type": "slider", "label": "C12", "default": float(training_stats['numeric_medians'].get('C12', 0)), "step": 0.01, "help": "Feature C12"},
+            "C8": {"type": "slider", "label": "C8", "default": float(training_stats['numeric_medians'].get('C8', 0)), "step": 0.01, "help": "Feature C8"},
+            "C1": {"type": "slider", "label": "C1", "default": float(training_stats['numeric_medians'].get('C1', 0)), "step": 0.01, "help": "Feature C1"},
+        }
+    }
+    
+    # Create expandable sections for each feature group
+    selected_features = {}
+    
+    with st.expander("📋 Feature Selection", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Select feature groups to include:**")
+            for group_name in feature_groups.keys():
+                if st.checkbox(f"✓ {group_name}", key=f"group_{group_name}", value=(group_name in ["Basic Information", "Time Information"])):
+                    selected_features[group_name] = feature_groups[group_name]
+        
+        with col2:
+            st.info("💡 **Tip**: Select the feature groups you have data for. Unselected features will use default values from training data.")
+    
+    st.markdown("---")
+    
+    # Create input form
+    with st.form("transaction_form"):
+        st.subheader("📝 Transaction Details")
+        
+        transaction_data = {}
+        
+        # Display selected features in organized columns
+        if selected_features:
+            num_groups = len(selected_features)
+            cols_per_row = min(2, num_groups)
+            
+            # Create columns dynamically
+            cols = st.columns(cols_per_row)
+            col_idx = 0
+            
+            for group_name, features in selected_features.items():
+                with cols[col_idx % cols_per_row]:
+                    st.markdown(f"#### {group_name}")
+                    
+                    for feature_name, feature_config in features.items():
+                        if feature_config["type"] == "slider":
+                            # Get min/max from training data if available, otherwise use defaults
+                            if feature_name in training_stats['numeric_mins'] and feature_name in training_stats['numeric_maxs']:
+                                min_val = float(training_stats['numeric_mins'][feature_name])
+                                max_val = float(training_stats['numeric_maxs'][feature_name])
+                                # Add some padding to the range
+                                range_padding = (max_val - min_val) * 0.1 if max_val > min_val else 1.0
+                                min_val = float(max(0, min_val - range_padding))
+                                max_val = float(max_val + range_padding)
+                            else:
+                                min_val = float(feature_config.get("min", 0.0))
+                                max_val = float(feature_config.get("max", 1000.0))
+                            
+                            # Ensure min < max
+                            if min_val >= max_val:
+                                max_val = float(min_val + 1.0)
+                            
+                            # Ensure step is float
+                            step_val = float(feature_config.get("step", 0.01))
+                            
+                            value = st.slider(
+                                feature_config["label"],
+                                min_value=min_val,
+                                max_value=max_val,
+                                value=float(feature_config["default"]),
+                                step=step_val,
+                                help=feature_config.get("help", ""),
+                                key=f"input_{feature_name}"
+                            )
+                            transaction_data[feature_name] = value
+                        elif feature_config["type"] == "select":
+                            value = st.selectbox(
+                                feature_config["label"],
+                                feature_config["options"],
+                                help=feature_config.get("help", ""),
+                                key=f"input_{feature_name}"
+                            )
+                            transaction_data[feature_name] = value
+                
+                col_idx += 1
+                if col_idx % cols_per_row == 0 and col_idx < num_groups:
+                    cols = st.columns(cols_per_row)
+        else:
+            st.warning("⚠️ Please select at least one feature group above.")
+        
+        submitted = st.form_submit_button("🔍 Predict Fraud Risk", use_container_width=True)
+    
+    # Process prediction when form is submitted
+    if submitted:
+        if not selected_features:
+            st.warning("⚠️ Please select at least one feature group above.")
+        else:
+            with st.spinner("Processing transaction and generating prediction..."):
+                # Fill in other required features with defaults
+                for col in training_stats['original_columns']:
+                    if col not in transaction_data:
+                        if col in training_stats['numeric_cols']:
+                            transaction_data[col] = training_stats['numeric_medians'].get(col, 0)
+                        else:
+                            transaction_data[col] = training_stats['categorical_modes'].get(col, 'unknown')
+                
+                # Preprocess transaction
+                try:
+                    processed_data = preprocess_transaction(transaction_data, training_stats)
+                
+                    if processed_data is None:
+                        st.error("❌ Failed to preprocess transaction data.")
+                    else:
+                        # Make prediction
+                        fraud_probability = model.predict_proba(processed_data)[0, 1]
+                        fraud_prediction = model.predict(processed_data)[0]
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            # Fraud probability with color coding
+                            if fraud_probability >= 0.7:
+                                st.metric("Fraud Probability", f"{fraud_probability:.4f}", delta="HIGH RISK", delta_color="inverse")
+                            elif fraud_probability >= 0.4:
+                                st.metric("Fraud Probability", f"{fraud_probability:.4f}", delta="MEDIUM RISK", delta_color="off")
+                            else:
+                                st.metric("Fraud Probability", f"{fraud_probability:.4f}", delta="LOW RISK")
+                        
+                        with col2:
+                            prediction_label = "🚨 FRAUDULENT" if fraud_prediction == 1 else "✅ LEGITIMATE"
+                            st.metric("Prediction", prediction_label)
+                        
+                        with col3:
+                            confidence = abs(fraud_probability - 0.5) * 2  # Convert to 0-1 confidence scale
+                            st.metric("Confidence", f"{confidence:.2%}")
+                        
+                        # Visualizations
+                        st.markdown("---")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Probability gauge
+                            fig = go.Figure(go.Indicator(
+                                mode = "gauge+number+delta",
+                                value = fraud_probability * 100,
+                                domain = {'x': [0, 1], 'y': [0, 1]},
+                                title = {'text': "Fraud Risk Score (%)"},
+                                delta = {'reference': 3.5, 'position': "top"},  # Average fraud rate
+                                gauge = {
+                                    'axis': {'range': [None, 100]},
+                                    'bar': {'color': "darkred" if fraud_probability > 0.5 else "darkgreen"},
+                                    'steps': [
+                                        {'range': [0, 20], 'color': "lightgreen"},
+                                        {'range': [20, 50], 'color': "yellow"},
+                                        {'range': [50, 100], 'color': "lightcoral"}
+                                    ],
+                                    'threshold': {
+                                        'line': {'color': "red", 'width': 4},
+                                        'thickness': 0.75,
+                                        'value': 50
+                                    }
+                                }
+                            ))
+                            fig.update_layout(height=300)
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        with col2:
+                            # Probability bar chart
+                            fig = px.bar(
+                                x=['Legitimate', 'Fraudulent'],
+                                y=[1 - fraud_probability, fraud_probability],
+                                labels={'x': 'Prediction', 'y': 'Probability'},
+                                title="Prediction Probabilities",
+                                color=['Legitimate', 'Fraudulent'],
+                                color_discrete_map={'Legitimate': 'green', 'Fraudulent': 'red'}
+                            )
+                            fig.update_layout(height=300, showlegend=False)
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Risk interpretation
+                        st.markdown("---")
+                        st.subheader("📊 Risk Interpretation")
+                        
+                        if fraud_probability >= 0.7:
+                            st.error(f"**HIGH RISK**: This transaction has a {fraud_probability:.2%} probability of being fraudulent. "
+                                    "Strongly recommend manual review or blocking.")
+                        elif fraud_probability >= 0.4:
+                            st.warning(f"**MEDIUM RISK**: This transaction has a {fraud_probability:.2%} probability of being fraudulent. "
+                                      "Consider additional verification.")
+                        else:
+                            st.success(f"**LOW RISK**: This transaction has a {fraud_probability:.2%} probability of being fraudulent. "
+                                      "Likely legitimate transaction.")
+                        
+                        # Feature contribution (if available)
+                        if hasattr(model, 'feature_importances_'):
+                            st.markdown("---")
+                            st.subheader("🔍 Top Contributing Features")
+                            
+                            # Get feature importance for this prediction
+                            # Note: This is a simplified view - XGBoost doesn't provide per-instance feature importance
+                            # We'll show the most important features in general
+                            feature_importance = model.feature_importances_
+                            feature_names = training_stats['feature_names']
+                            
+                            importance_df = pd.DataFrame({
+                                'feature': feature_names,
+                                'importance': feature_importance
+                            }).sort_values('importance', ascending=False).head(10)
+                            
+                            fig = px.bar(
+                                importance_df,
+                                x='importance',
+                                y='feature',
+                                orientation='h',
+                                labels={'x': 'Importance', 'y': 'Feature'},
+                                title="Top 10 Most Important Features (Model-wide)",
+                                color='importance',
+                                color_continuous_scale='Reds'
+                            )
+                            fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Transaction summary
+                        st.markdown("---")
+                        st.subheader("📋 Transaction Summary")
+                        
+                        # Create summary from provided features
+                        summary_items = []
+                        for key, value in transaction_data.items():
+                            if key in ['TransactionAmt']:
+                                summary_items.append((f"Transaction Amount", f"${value:,.2f}"))
+                            elif key in ['card4', 'card6']:
+                                summary_items.append((key.replace('card', 'Card ').title(), str(value).title()))
+                            elif key in ['addr1', 'addr2']:
+                                if 'Region' not in [s[0] for s in summary_items]:
+                                    summary_items.append(("Region (addr1, addr2)", f"({transaction_data.get('addr1', 'N/A')}, {transaction_data.get('addr2', 'N/A')})"))
+                            elif key == 'ProductCD':
+                                summary_items.append(("Product Code", str(value)))
+                            elif key in ['V258', 'V201', 'V149', 'C14']:
+                                summary_items.append((key, f"{value:.4f}"))
+                        
+                        summary_items.append(("Fraud Probability", f"{fraud_probability:.4f}"))
+                        summary_items.append(("Prediction", "Fraudulent" if fraud_prediction == 1 else "Legitimate"))
+                        
+                        col1, col2 = st.columns(2)
+                        mid_point = len(summary_items) // 2
+                        with col1:
+                            for key, value in summary_items[:mid_point]:
+                                st.write(f"**{key}**: {value}")
+                        with col2:
+                            for key, value in summary_items[mid_point:]:
+                                st.write(f"**{key}**: {value}")
+                
+                except Exception as e:
+                    st.error(f"❌ Error making prediction: {e}")
+                    st.info("Please check your input values and try again.")
+                    import traceback
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
+    
+    else:
+        # Show instructions when form is not submitted
+        st.info("""
+        💡 **Instructions:**
+        1. Fill in the transaction details above
+        2. Click "Predict Fraud Risk" to get an instant prediction
+        3. The model will analyze the transaction and provide:
+           - Fraud probability score
+           - Risk level (Low/Medium/High)
+           - Visual risk indicators
+           - Feature importance insights
+        
+        **Note**: Only the most important features are shown. Other features are automatically filled with default values from the training data.
+        """)
 
 if __name__ == "__main__":
     main()

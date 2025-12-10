@@ -1,5 +1,5 @@
 card6,Avg_Fraud_Probability,Actual_Fraud_Rate,Transaction_Count
-credit,0.0655,0.0668,148986
-charge card,0.032,0.0,15
+credit,0.0654,0.0668,148986
+charge card,0.0378,0.0,15
 debit,0.0247,0.0243,439938
-debit or credit,0.0038,0.0,30
+debit or credit,0.0039,0.0,30
