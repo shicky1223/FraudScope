@@ -12,7 +12,6 @@ import joblib
 import os
 from pathlib import Path
 
-# Page configuration
 st.set_page_config(
     page_title="FraudScope Dashboard",
     page_icon="🔍",
@@ -20,7 +19,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
 st.markdown("""
     <style>
     .main-header {
@@ -39,7 +37,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Paths
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 MODELS_DIR = BASE_DIR / "models"
@@ -86,52 +83,41 @@ def load_processed_data():
 def load_training_data_stats():
     """Load training data to get feature statistics for preprocessing"""
     try:
-        # Try loading processed data first
         train_path = DATA_DIR / "processed" / "clean_train.parquet"
         if train_path.exists():
             df = pd.read_parquet(train_path)
         else:
-            # Fallback to raw data
             train_path = DATA_DIR / "raw" / "train_transaction.csv"
             if train_path.exists():
                 df = pd.read_csv(train_path, low_memory=False)
             else:
                 return None
         
-        # Prepare features (same as training)
         X = df.drop(['isFraud', 'TransactionID'], axis=1, errors='ignore')
         
-        # Store original columns BEFORE feature engineering (for user input matching)
         original_columns_before_fe = list(X.columns)
         
-        # Calculate top devices from training data for DeviceInfo grouping
         top_devices = None
         if 'DeviceInfo' in X.columns:
             deviceinfo_counts = X['DeviceInfo'].value_counts()
-            top_n_devices = 50  # Keep top 50 most common devices
+            top_n_devices = 50
             top_devices = set(deviceinfo_counts.head(top_n_devices).index)
         
-        # Apply DeviceInfo feature engineering (same as in notebook)
         X = apply_deviceinfo_feature_engineering(X, top_devices=top_devices)
         
-        # Calculate statistics (after feature engineering)
         numeric_cols = X.select_dtypes(include=[np.number]).columns
         categorical_cols = X.select_dtypes(exclude=[np.number]).columns
         
-        # Get medians for numeric columns
         numeric_medians = X[numeric_cols].median().to_dict()
         
-        # Get min/max for numeric columns (for sliders)
         numeric_mins = X[numeric_cols].min().to_dict()
         numeric_maxs = X[numeric_cols].max().to_dict()
         
-        # Get modes for categorical columns
         categorical_modes = {}
         for col in categorical_cols:
             mode_val = X[col].mode()
             categorical_modes[col] = mode_val[0] if len(mode_val) > 0 else 'unknown'
         
-        # Get feature names after encoding (for matching)
         X_filled = X.copy()
         X_filled[numeric_cols] = X_filled[numeric_cols].fillna(X_filled[numeric_cols].median())
         for col in categorical_cols:
@@ -139,7 +125,6 @@ def load_training_data_stats():
         
         X_encoded = pd.get_dummies(X_filled, drop_first=True)
         
-        # Ensure feature names are strings (not numpy strings or other types)
         feature_names = [str(f) for f in X_encoded.columns]
         
         return {
@@ -147,11 +132,11 @@ def load_training_data_stats():
             'numeric_mins': numeric_mins,
             'numeric_maxs': numeric_maxs,
             'categorical_modes': categorical_modes,
-            'feature_names': feature_names,  # Ensure strings
-            'original_columns': original_columns_before_fe,  # Columns BEFORE feature engineering
+            'feature_names': feature_names,
+            'original_columns': original_columns_before_fe,
             'numeric_cols': list(numeric_cols),
             'categorical_cols': list(categorical_cols),
-            'top_devices': top_devices  # Store for use in preprocessing
+            'top_devices': top_devices
         }
     except Exception as e:
         st.error(f"Error loading training data stats: {e}")
@@ -167,7 +152,6 @@ def apply_deviceinfo_feature_engineering(df, top_devices=None):
     if 'DeviceInfo' not in df.columns:
         return df
     
-    # 1. Extract OS Type from DeviceInfo
     def extract_os(device_info):
         if pd.isna(device_info) or device_info == '':
             return 'Unknown'
@@ -187,12 +171,10 @@ def apply_deviceinfo_feature_engineering(df, top_devices=None):
     
     df['DeviceInfo_OS'] = df['DeviceInfo'].apply(extract_os)
     
-    # 2. Extract Device Brand (common brands)
     def extract_brand(device_info):
         if pd.isna(device_info) or device_info == '':
             return 'Unknown'
         device_str = str(device_info).lower()
-        # Common brands
         brands = {
             'samsung': ['sm-', 'samsung', 'galaxy'],
             'apple': ['iphone', 'ipad', 'ios device'],
@@ -212,12 +194,10 @@ def apply_deviceinfo_feature_engineering(df, top_devices=None):
     
     df['DeviceInfo_Brand'] = df['DeviceInfo'].apply(extract_brand)
     
-    # 3. Group rare DeviceInfo values (keep top N, group rest as 'Other')
     if top_devices is None:
-        # Calculate from current data if not provided
         if 'DeviceInfo' in df.columns:
             deviceinfo_counts = df['DeviceInfo'].value_counts()
-            top_n_devices = 50  # Keep top 50 most common devices
+            top_n_devices = 50
             top_devices = set(deviceinfo_counts.head(top_n_devices).index)
         else:
             top_devices = set()
@@ -233,7 +213,6 @@ def apply_deviceinfo_feature_engineering(df, top_devices=None):
     if 'DeviceInfo' in df.columns:
         df['DeviceInfo_Grouped'] = df['DeviceInfo'].apply(group_rare_devices)
     
-    # 4. Create binary flag for high-risk devices
     high_risk_devices = [
         'Blade L3 Build/KOT49H',
         'NOKIA',
@@ -248,9 +227,6 @@ def apply_deviceinfo_feature_engineering(df, top_devices=None):
     ]
     df['DeviceInfo_HighRisk'] = df['DeviceInfo'].isin(high_risk_devices).astype(int)
     
-    # Keep original DeviceInfo column (model was trained with both raw and engineered features)
-    # The original DeviceInfo will be one-hot encoded along with the engineered features
-    
     return df
 
 def preprocess_transaction(transaction_data, training_stats):
@@ -258,25 +234,20 @@ def preprocess_transaction(transaction_data, training_stats):
     if training_stats is None:
         return None
     
-    # Create a dataframe with one row
     df_input = pd.DataFrame([transaction_data])
     
-    # Fill missing numeric columns with medians
     for col in training_stats['numeric_cols']:
         if col not in df_input.columns:
             df_input[col] = training_stats['numeric_medians'].get(col, 0)
         else:
             df_input[col] = df_input[col].fillna(training_stats['numeric_medians'].get(col, 0))
     
-    # Fill missing categorical columns with modes
     for col in training_stats['categorical_cols']:
         if col not in df_input.columns:
             df_input[col] = training_stats['categorical_modes'].get(col, 'unknown')
         else:
             df_input[col] = df_input[col].fillna(training_stats['categorical_modes'].get(col, 'unknown'))
     
-    # Ensure all original columns are present (before feature engineering)
-    # Note: DeviceInfo might be in input but not in original_columns if it was dropped
     for col in training_stats['original_columns']:
         if col not in df_input.columns:
             if col in training_stats['numeric_cols']:
@@ -284,34 +255,26 @@ def preprocess_transaction(transaction_data, training_stats):
             else:
                 df_input[col] = training_stats['categorical_modes'].get(col, 'unknown')
     
-    # Reorder columns to match training data (only columns that exist in both)
     available_cols = [col for col in training_stats['original_columns'] if col in df_input.columns]
     df_input = df_input[available_cols]
     
-    # Add DeviceInfo if it's in input but not in original_columns (for feature engineering)
     if 'DeviceInfo' in transaction_data and 'DeviceInfo' not in df_input.columns:
         df_input['DeviceInfo'] = transaction_data.get('DeviceInfo', 'Unknown')
     
-    # Apply DeviceInfo feature engineering BEFORE one-hot encoding
-    # Use top_devices from training data if available
     top_devices = training_stats.get('top_devices', None)
     df_input = apply_deviceinfo_feature_engineering(df_input, top_devices=top_devices)
     
-    # One-hot encode categorical variables
     df_encoded = pd.get_dummies(df_input, drop_first=True)
     
-    # Align with training feature names (add missing columns, remove extra)
-    feature_names = [str(f) for f in training_stats['feature_names']]  # Ensure strings
-    df_encoded.columns = [str(c) for c in df_encoded.columns]  # Ensure strings
+    feature_names = [str(f) for f in training_stats['feature_names']]
+    df_encoded.columns = [str(c) for c in df_encoded.columns]
     
     for feature in feature_names:
         if feature not in df_encoded.columns:
             df_encoded[feature] = 0
     
-    # Remove any extra columns (keep only features the model expects)
     df_encoded = df_encoded[[f for f in feature_names if f in df_encoded.columns]]
     
-    # Ensure correct order and add any still missing
     df_encoded = df_encoded.reindex(columns=feature_names, fill_value=0)
     
     return df_encoded
@@ -366,16 +329,13 @@ def get_model_performance():
     return None
 
 def main():
-    # Header
     st.markdown('<h1 class="main-header">🔍 FraudScope Dashboard</h1>', unsafe_allow_html=True)
     st.markdown("### AI-Driven Fraud Detection and Global Risk Mapping")
     
-    # Load data
     model = load_model()
     test_data = load_test_data()
     results = load_results()
     
-    # Sidebar
     with st.sidebar:
         st.header("Navigation")
         page = st.radio(
@@ -395,7 +355,6 @@ def main():
         else:
             st.info("ℹ️ Test data not available (optional - dashboard works with pre-computed results)")
         
-        # Fraud threshold slider (only show on Model Performance page)
         if page == "Model Performance" and model is not None:
             st.markdown("---")
             st.header("Fraud Threshold")
@@ -410,7 +369,6 @@ def main():
         else:
             threshold = 0.5
     
-    # Main content based on selected page
     if page == "Overview":
         show_overview(model, test_data, results)
     elif page == "Model Performance":
@@ -437,21 +395,18 @@ def show_overview(model, test_data, results):
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Model status
     with col1:
         if model is not None:
             st.metric("Model Status", "✅ Loaded", delta="Ready")
         else:
             st.metric("Model Status", "❌ Not Found", delta="Train Required")
     
-    # Test data
     with col2:
         if test_data is not None:
             st.metric("Test Transactions", f"{len(test_data):,}", delta="Available")
         else:
             st.metric("Test Transactions", "N/A", delta="Optional")
     
-    # Performance metrics
     metrics = get_model_performance()
     with col3:
         if metrics:
@@ -467,7 +422,6 @@ def show_overview(model, test_data, results):
     
     st.markdown("---")
     
-    # Quick insights
     st.subheader("🔍 Quick Insights")
     
     col1, col2 = st.columns(2)
@@ -500,7 +454,6 @@ def show_overview(model, test_data, results):
         for feature in features:
             st.markdown(f"- {feature}")
     
-    # Instructions
     st.markdown("---")
     st.info("💡 **Tip**: Use the sidebar to navigate to different sections of the dashboard.")
 
@@ -514,32 +467,23 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
         st.warning("Model comparison data not available. Please run the training notebook first.")
         return
     
-    # Threshold-based F1 calculation for XGBoost
     if model is not None and test_data is not None:
         st.markdown("---")
         st.subheader("🔧 Threshold-Based Performance (XGBoost)")
         
         try:
-            # Prepare test data (same preprocessing as training)
-            # Note: This is a simplified version - you may need to match exact preprocessing
             from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
             
-            # For now, we'll use a placeholder - in production, you'd need to preprocess test_data
-            # the same way as training data
             st.info("💡 **Note**: To compute threshold-based metrics, the test data needs to be preprocessed the same way as training data. This requires running predictions in the notebook first.")
             
-            # If we have predictions saved, we can use them
-            # For now, show the threshold slider impact conceptually
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.metric("Current Threshold", f"{threshold:.2f}")
             with col2:
-                # Show how threshold affects precision/recall tradeoff
                 if 'XGBoost' in model_comparison.index:
                     base_precision = model_comparison.loc['XGBoost', 'Precision']
                     base_recall = model_comparison.loc['XGBoost', 'Recall']
-                    # Estimate: lower threshold = higher recall, lower precision
                     estimated_precision = max(0, min(1, base_precision - (0.5 - threshold) * 0.3))
                     estimated_recall = max(0, min(1, base_recall + (0.5 - threshold) * 0.3))
                     estimated_f1 = 2 * (estimated_precision * estimated_recall) / (estimated_precision + estimated_recall) if (estimated_precision + estimated_recall) > 0 else 0
@@ -556,17 +500,14 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
         st.subheader("🔧 Threshold-Based Performance (XGBoost)")
         st.info("ℹ️ **Test data not available**: Threshold-based metrics require test data. The dashboard works with pre-computed results from the modeling notebook.")
     
-    # Confusion Matrix for XGBoost
     if 'XGBoost' in model_comparison.index:
         st.markdown("---")
         st.subheader("📊 Confusion Matrix (XGBoost)")
         
-        # Try to load confusion matrix data if available
         confusion_data_path = RESULTS_DIR / "confusion_matrix_xgboost.csv"
         if confusion_data_path.exists():
             try:
                 cm_data = pd.read_csv(confusion_data_path, index_col=0)
-                # Create heatmap
                 fig = px.imshow(
                     cm_data.values,
                     labels=dict(x="Predicted", y="Actual", color="Count"),
@@ -574,7 +515,6 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     y=['Not Fraud', 'Fraud'],
                     color_continuous_scale='Blues'
                 )
-                # Add text annotations manually to avoid deprecation warning
                 fig.update_traces(text=cm_data.values, texttemplate='%{text}', textfont={"size": 12})
                 fig.update_layout(
                     title="XGBoost Confusion Matrix",
@@ -583,7 +523,6 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                 )
                 st.plotly_chart(fig, width='stretch')
                 
-                # Extract values for display
                 if cm_data.shape == (2, 2):
                     tn, fp, fn, tp = cm_data.iloc[0, 0], cm_data.iloc[0, 1], cm_data.iloc[1, 0], cm_data.iloc[1, 1]
                     col1, col2, col3, col4 = st.columns(4)
@@ -596,13 +535,11 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     with col4:
                         st.metric("True Positives", f"{int(tp):,}")
             except Exception as e:
-                st.warning(f"Could not load confusion matrix: {e}")
+                    st.warning(f"Could not load confusion matrix: {e}")
                 st.info("💡 **Tip**: Run the modeling notebook to generate confusion matrix data.")
         else:
-            # Create a placeholder or compute from model_comparison if possible
             st.info("💡 **Tip**: Confusion matrix data not found. Run cell 18 in the modeling notebook to generate `results/confusion_matrix_xgboost.csv`. The code has already been added to the notebook.")
             
-            # Show a note about what the confusion matrix would show
             st.markdown("""
             **Understanding the Confusion Matrix:**
             - **True Positives (TP)**: Correctly identified fraudulent transactions
@@ -611,15 +548,12 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
             - **True Negatives (TN)**: Correctly identified legitimate transactions
             """)
     
-    # Display metrics table
     st.subheader("Model Comparison")
     
-    # Format the dataframe for display
     display_df = model_comparison.copy()
     if 'Rank' in display_df.columns:
         display_df = display_df.set_index('Rank')
     
-    # Format numeric columns
     numeric_cols = ['ROC-AUC', 'Average Precision', 'F1-Score', 'Precision', 'Recall']
     for col in numeric_cols:
         if col in display_df.columns:
@@ -627,7 +561,6 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
     
     st.dataframe(display_df, width='stretch')
     
-    # Visualizations
     col1, col2 = st.columns(2)
     
     with col1:
@@ -654,7 +587,6 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
         fig.update_layout(showlegend=False, height=400)
         st.plotly_chart(fig, width='stretch')
     
-    # Best model highlight
     if 'XGBoost' in model_comparison.index:
         xgb_metrics = model_comparison.loc['XGBoost']
         st.success(f"""
@@ -703,16 +635,13 @@ def show_region_analysis(results):
     region_data = region_data.copy()
     region_data['Region_Code'] = region_data.index.map(format_region_code)
     
-    # Display top regions
     st.markdown("#### Top 20 High-Risk Regions")
     
-    # Sort by fraud probability
     top_regions = region_data.nlargest(20, 'Avg_Fraud_Probability')
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Use region codes for display
         plot_data = top_regions.copy()
         plot_data['Region_Code'] = plot_data.index.map(format_region_code)
         
@@ -730,20 +659,17 @@ def show_region_analysis(results):
         st.plotly_chart(fig, width='stretch')
     
     with col2:
-        # Format dataframe for display with region codes
         display_regions = top_regions[['Avg_Fraud_Probability', 'Actual_Fraud_Rate', 'Transaction_Count']].copy()
         display_regions = display_regions.reset_index()
-        # Get the index column name (could be 'index' or the actual index name)
-        index_col = display_regions.columns[0]  # First column after reset_index is the index
+        index_col = display_regions.columns[0]
         display_regions = display_regions.rename(columns={index_col: 'Region_Code'})
         display_regions['Region_Code'] = display_regions['Region_Code'].map(format_region_code)
         display_regions = display_regions[['Region_Code', 'Avg_Fraud_Probability', 'Actual_Fraud_Rate', 'Transaction_Count']]
         display_regions['Avg_Fraud_Probability'] = display_regions['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Actual_Fraud_Rate'] = display_regions['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Transaction_Count'] = display_regions['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-        st.dataframe(display_regions, width='stretch', hide_index=True)
+            st.dataframe(display_regions, width='stretch', hide_index=True)
     
-    # Summary statistics
     st.markdown("#### Regional Risk Statistics")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -778,7 +704,6 @@ def show_time_analysis(results):
             fig.update_layout(height=400)
             st.plotly_chart(fig, width='stretch')
             
-            # Format dataframe for display
             display_month = month_data.copy()
             display_month['Avg_Fraud_Probability'] = display_month['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_month['Actual_Fraud_Rate'] = display_month['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
@@ -805,7 +730,6 @@ def show_time_analysis(results):
             fig.update_layout(height=400, xaxis={'categoryorder': 'array', 'categoryarray': days_order})
             st.plotly_chart(fig, width='stretch')
             
-            # Format dataframe for display
             display_day = day_data_ordered.copy()
             display_day['Avg_Fraud_Probability'] = display_day['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_day['Actual_Fraud_Rate'] = display_day['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
@@ -838,7 +762,6 @@ def show_card_analysis(results):
             fig.update_layout(height=400, xaxis={'categoryorder': 'total descending'})
             st.plotly_chart(fig, width='stretch')
             
-            # Format dataframe for display
             display_card4 = card4_data.copy()
             display_card4['Avg_Fraud_Probability'] = display_card4['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card4['Actual_Fraud_Rate'] = display_card4['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
@@ -862,7 +785,6 @@ def show_card_analysis(results):
             fig.update_layout(height=400, xaxis={'categoryorder': 'total descending'})
             st.plotly_chart(fig, width='stretch')
             
-            # Format dataframe for display
             display_card6 = card6_data.copy()
             display_card6['Avg_Fraud_Probability'] = display_card6['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_card6['Actual_Fraud_Rate'] = display_card6['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
@@ -889,7 +811,6 @@ def show_card_analysis(results):
             fig.update_layout(height=500, yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, width='stretch')
             
-            # Format dataframe for display
             display_combined = top_combined.copy()
             display_combined['Avg_Fraud_Probability'] = display_combined['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
             display_combined['Actual_Fraud_Rate'] = display_combined['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
@@ -927,16 +848,14 @@ def show_amount_analysis(results):
         st.plotly_chart(fig, width='stretch')
     
     with col2:
-        # Format dataframe for display
         display_amount = amount_data.copy()
         display_amount['Avg_Fraud_Probability'] = display_amount['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_amount['Actual_Fraud_Rate'] = display_amount['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_amount['Transaction_Count'] = display_amount['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
         if 'Avg_Amount' in display_amount.columns:
             display_amount['Avg_Amount'] = display_amount['Avg_Amount'].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-        st.dataframe(display_amount, width='stretch')
+            st.dataframe(display_amount, width='stretch')
     
-    # Insights
     st.markdown("#### Key Insights")
     highest_risk = amount_data.loc[amount_data['Avg_Fraud_Probability'].idxmax()]
     st.info(f"""
@@ -953,7 +872,6 @@ def show_device_analysis(results):
     st.info("💡 **How to read this**: Higher average fraud probability means transactions from this device type/info are more likely to be fraudulent according to the XGBoost model.")
     st.markdown("---")
     
-    # Load processed data which includes merged identity data with DeviceType/DeviceInfo
     data = load_processed_data()
     
     if data is None:
@@ -965,7 +883,6 @@ def show_device_analysis(results):
         """)
         return
     
-    # Check if DeviceType and DeviceInfo columns exist
     if 'DeviceType' not in data.columns and 'DeviceInfo' not in data.columns:
         st.warning("DeviceType or DeviceInfo columns not found in the processed data.")
         st.info("Please ensure the EDA notebook has been run to merge transaction and identity data.")
@@ -977,7 +894,6 @@ def show_device_analysis(results):
         if 'DeviceType' in data.columns:
             st.markdown("#### 📱 Fraud Risk by Device Type")
             
-            # Calculate fraud risk by device type
             device_type_analysis = data.groupby('DeviceType')['isFraud'].agg(['mean', 'count']).round(4)
             device_type_analysis.columns = ['Fraud_Rate', 'Transaction_Count']
             device_type_counts = data['DeviceType'].value_counts()
@@ -985,7 +901,6 @@ def show_device_analysis(results):
             col1, col2 = st.columns(2)
             
             with col1:
-                # Device type distribution
                 fig = px.bar(
                     x=device_type_counts.index,
                     y=device_type_counts.values,
@@ -998,7 +913,6 @@ def show_device_analysis(results):
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                # Display statistics with fraud rates
                 st.markdown("#### Device Type Statistics")
                 for device_type in device_type_counts.index:
                     count = device_type_counts[device_type]
@@ -1010,7 +924,6 @@ def show_device_analysis(results):
                         delta=f"{fraud_rate:.2f}% fraud rate"
                     )
             
-            # Display fraud rate comparison
             st.markdown("---")
             st.markdown("#### Fraud Rate by Device Type")
             display_df = device_type_analysis.copy()
@@ -1045,7 +958,6 @@ def show_device_analysis(results):
         if 'DeviceInfo' in data.columns:
             st.markdown("#### 🔍 Fraud Risk by Device Info")
             
-            # Show top devices with fraud rates
             device_info_counts = data['DeviceInfo'].value_counts().head(20)
             device_info_fraud = data.groupby('DeviceInfo')['isFraud'].agg(['mean', 'count'])
             device_info_fraud = device_info_fraud[device_info_fraud['count'] >= 10]  # Min 10 transactions
@@ -1110,7 +1022,6 @@ def show_device_analysis(results):
         else:
             st.warning("DeviceInfo column not found in the data.")
     
-    # Feature Engineering Info
     st.markdown("---")
     st.markdown("#### 🛠️ Feature Engineering Recommendations")
     st.info("""
@@ -1132,24 +1043,20 @@ def show_feature_importance(model):
         st.info("Run the modeling notebook to train and save the XGBoost model.")
         return
     
-    try:
-        # Get feature importance
-        feature_importance = model.feature_importances_
-        
-        # Get feature names (if available)
-        if hasattr(model, 'feature_names_in_'):
+        try:
+            feature_importance = model.feature_importances_
+            
+            if hasattr(model, 'feature_names_in_'):
             feature_names = model.feature_names_in_
-        else:
-            feature_names = [f'Feature_{i}' for i in range(len(feature_importance))]
-        
-        # Create dataframe
-        importance_df = pd.DataFrame({
+            else:
+                feature_names = [f'Feature_{i}' for i in range(len(feature_importance))]
+            
+            importance_df = pd.DataFrame({
             'feature': feature_names,
-            'importance': feature_importance
-        }).sort_values('importance', ascending=False)
-        
-        # Show top N features
-        n_features = st.slider("Number of top features to display", 10, 50, 20)
+                'importance': feature_importance
+            }).sort_values('importance', ascending=False)
+            
+            n_features = st.slider("Number of top features to display", 10, 50, 20)
         
         top_features = importance_df.head(n_features)
         
@@ -1170,12 +1077,10 @@ def show_feature_importance(model):
             st.plotly_chart(fig, width='stretch')
         
         with col2:
-            # Format dataframe for display
             display_features = top_features.copy()
             display_features['importance'] = display_features['importance'].apply(lambda x: f'{x:.6f}' if pd.notna(x) else 'N/A')
             st.dataframe(display_features, width='stretch')
         
-        # Summary statistics
         st.markdown("#### Feature Importance Statistics")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -1201,7 +1106,6 @@ def show_realtime_predictions(model):
         st.info("Run the modeling notebook to train and save the XGBoost model.")
         return
     
-    # Load training statistics for preprocessing
     training_stats = load_training_data_stats()
     if training_stats is None:
         st.error("❌ Could not load training data statistics. Please ensure the training data is available.")
@@ -1210,20 +1114,16 @@ def show_realtime_predictions(model):
     
     st.markdown("---")
     
-    # Feature selection
     st.subheader("🔧 Select Features to Include")
     
-    # Helper function to get slider range for a feature
     def get_slider_range(feature_name, default_min=None, default_max=None):
         """Get min/max values for slider, with fallback to defaults"""
         min_val = training_stats['numeric_mins'].get(feature_name, default_min if default_min is not None else 0.0)
         max_val = training_stats['numeric_maxs'].get(feature_name, default_max if default_max is not None else 1000.0)
-        # Ensure min < max
         if min_val >= max_val:
             max_val = min_val + 1.0
         return float(min_val), float(max_val)
     
-    # Define available feature groups
     feature_groups = {
         "Basic Information": {
             "TransactionAmt": {"type": "slider", "label": "Transaction Amount ($)", "default": 100.0, "min": 0.0, "max": 10000.0, "step": 1.0, "help": "The amount of the transaction"},
@@ -1263,7 +1163,6 @@ def show_realtime_predictions(model):
         }
     }
     
-    # Create expandable sections for each feature group
     selected_features = {}
     
     with st.expander("📋 Feature Selection", expanded=True):
@@ -1280,18 +1179,15 @@ def show_realtime_predictions(model):
     
     st.markdown("---")
     
-    # Create input form
     with st.form("transaction_form"):
         st.subheader("📝 Transaction Details")
         
         transaction_data = {}
         
-        # Display selected features in organized columns
         if selected_features:
             num_groups = len(selected_features)
             cols_per_row = min(2, num_groups)
             
-            # Create columns dynamically
             cols = st.columns(cols_per_row)
             col_idx = 0
             
@@ -1301,11 +1197,9 @@ def show_realtime_predictions(model):
                     
                     for feature_name, feature_config in features.items():
                         if feature_config["type"] == "slider":
-                            # Get min/max from training data if available, otherwise use defaults
                             if feature_name in training_stats['numeric_mins'] and feature_name in training_stats['numeric_maxs']:
                                 min_val = float(training_stats['numeric_mins'][feature_name])
                                 max_val = float(training_stats['numeric_maxs'][feature_name])
-                                # Add some padding to the range
                                 range_padding = (max_val - min_val) * 0.1 if max_val > min_val else 1.0
                                 min_val = float(max(0, min_val - range_padding))
                                 max_val = float(max_val + range_padding)
@@ -1313,11 +1207,9 @@ def show_realtime_predictions(model):
                                 min_val = float(feature_config.get("min", 0.0))
                                 max_val = float(feature_config.get("max", 1000.0))
                             
-                            # Ensure min < max
                             if min_val >= max_val:
                                 max_val = float(min_val + 1.0)
                             
-                            # Ensure step is float
                             step_val = float(feature_config.get("step", 0.01))
                             
                             value = st.slider(
@@ -1347,13 +1239,11 @@ def show_realtime_predictions(model):
         
         submitted = st.form_submit_button("🔍 Predict Fraud Risk", use_container_width=True)
     
-    # Process prediction when form is submitted
     if submitted:
         if not selected_features:
             st.warning("⚠️ Please select at least one feature group above.")
         else:
             with st.spinner("Processing transaction and generating prediction..."):
-                # Fill in other required features with defaults
                 for col in training_stats['original_columns']:
                     if col not in transaction_data:
                         if col in training_stats['numeric_cols']:
@@ -1361,21 +1251,18 @@ def show_realtime_predictions(model):
                         else:
                             transaction_data[col] = training_stats['categorical_modes'].get(col, 'unknown')
                 
-                # Preprocess transaction
                 try:
                     processed_data = preprocess_transaction(transaction_data, training_stats)
                 
                     if processed_data is None:
                         st.error("❌ Failed to preprocess transaction data.")
                     else:
-                        # Make prediction
                         fraud_probability = model.predict_proba(processed_data)[0, 1]
                         fraud_prediction = model.predict(processed_data)[0]
                         
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
-                            # Fraud probability with color coding
                             if fraud_probability >= 0.7:
                                 st.metric("Fraud Probability", f"{fraud_probability:.4f}", delta="HIGH RISK", delta_color="inverse")
                             elif fraud_probability >= 0.4:
@@ -1388,15 +1275,13 @@ def show_realtime_predictions(model):
                             st.metric("Prediction", prediction_label)
                         
                         with col3:
-                            confidence = abs(fraud_probability - 0.5) * 2  # Convert to 0-1 confidence scale
+                            confidence = abs(fraud_probability - 0.5) * 2
                             st.metric("Confidence", f"{confidence:.2%}")
                         
-                        # Visualizations
                         st.markdown("---")
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Probability gauge
                             fig = go.Figure(go.Indicator(
                                 mode = "gauge+number+delta",
                                 value = fraud_probability * 100,
@@ -1422,7 +1307,6 @@ def show_realtime_predictions(model):
                             st.plotly_chart(fig, use_container_width=True)
                         
                         with col2:
-                            # Probability bar chart
                             fig = px.bar(
                                 x=['Legitimate', 'Fraudulent'],
                                 y=[1 - fraud_probability, fraud_probability],
@@ -1434,7 +1318,6 @@ def show_realtime_predictions(model):
                             fig.update_layout(height=300, showlegend=False)
                             st.plotly_chart(fig, use_container_width=True)
                         
-                        # Risk interpretation
                         st.markdown("---")
                         st.subheader("📊 Risk Interpretation")
                         
@@ -1448,14 +1331,10 @@ def show_realtime_predictions(model):
                             st.success(f"**LOW RISK**: This transaction has a {fraud_probability:.2%} probability of being fraudulent. "
                                       "Likely legitimate transaction.")
                         
-                        # Feature contribution (if available)
                         if hasattr(model, 'feature_importances_'):
                             st.markdown("---")
                             st.subheader("🔍 Top Contributing Features")
                             
-                            # Get feature importance for this prediction
-                            # Note: This is a simplified view - XGBoost doesn't provide per-instance feature importance
-                            # We'll show the most important features in general
                             feature_importance = model.feature_importances_
                             feature_names = training_stats['feature_names']
                             
@@ -1477,11 +1356,9 @@ def show_realtime_predictions(model):
                             fig.update_layout(height=400, yaxis={'categoryorder': 'total ascending'})
                             st.plotly_chart(fig, use_container_width=True)
                         
-                        # Transaction summary
                         st.markdown("---")
                         st.subheader("📋 Transaction Summary")
                         
-                        # Create summary from provided features
                         summary_items = []
                         for key, value in transaction_data.items():
                             if key in ['TransactionAmt']:
@@ -1516,7 +1393,6 @@ def show_realtime_predictions(model):
                         st.code(traceback.format_exc())
     
     else:
-        # Show instructions when form is not submitted
         st.info("""
         💡 **Instructions:**
         1. Fill in the transaction details above
