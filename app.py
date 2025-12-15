@@ -73,10 +73,15 @@ def load_processed_data():
     try:
         processed_path = DATA_DIR / "processed" / "clean_train.parquet"
         if processed_path.exists():
-            return pd.read_parquet(processed_path)
+            df = pd.read_parquet(processed_path)
+            if 'DeviceType' not in df.columns and 'DeviceInfo' not in df.columns:
+                return None
+            return df
         return None
     except Exception as e:
         st.error(f"Error loading processed data: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 @st.cache_data
