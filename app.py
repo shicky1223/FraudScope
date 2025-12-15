@@ -535,7 +535,7 @@ def show_model_performance(results, model=None, test_data=None, threshold=0.5):
                     with col4:
                         st.metric("True Positives", f"{int(tp):,}")
             except Exception as e:
-                    st.warning(f"Could not load confusion matrix: {e}")
+                st.warning(f"Could not load confusion matrix: {e}")
                 st.info("💡 **Tip**: Run the modeling notebook to generate confusion matrix data.")
         else:
             st.info("💡 **Tip**: Confusion matrix data not found. Run cell 18 in the modeling notebook to generate `results/confusion_matrix_xgboost.csv`. The code has already been added to the notebook.")
@@ -668,7 +668,7 @@ def show_region_analysis(results):
         display_regions['Avg_Fraud_Probability'] = display_regions['Avg_Fraud_Probability'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Actual_Fraud_Rate'] = display_regions['Actual_Fraud_Rate'].apply(lambda x: f'{x:.4f}' if pd.notna(x) else 'N/A')
         display_regions['Transaction_Count'] = display_regions['Transaction_Count'].apply(lambda x: f'{x:.0f}' if pd.notna(x) else 'N/A')
-            st.dataframe(display_regions, width='stretch', hide_index=True)
+        st.dataframe(display_regions, width='stretch', hide_index=True)
     
     st.markdown("#### Regional Risk Statistics")
     col1, col2, col3, col4 = st.columns(4)
@@ -1043,20 +1043,20 @@ def show_feature_importance(model):
         st.info("Run the modeling notebook to train and save the XGBoost model.")
         return
     
-        try:
-            feature_importance = model.feature_importances_
-            
-            if hasattr(model, 'feature_names_in_'):
+    try:
+        feature_importance = model.feature_importances_
+        
+        if hasattr(model, 'feature_names_in_'):
             feature_names = model.feature_names_in_
-            else:
-                feature_names = [f'Feature_{i}' for i in range(len(feature_importance))]
-            
-            importance_df = pd.DataFrame({
+        else:
+            feature_names = [f'Feature_{i}' for i in range(len(feature_importance))]
+        
+        importance_df = pd.DataFrame({
             'feature': feature_names,
-                'importance': feature_importance
-            }).sort_values('importance', ascending=False)
-            
-            n_features = st.slider("Number of top features to display", 10, 50, 20)
+            'importance': feature_importance
+        }).sort_values('importance', ascending=False)
+        
+        n_features = st.slider("Number of top features to display", 10, 50, 20)
         
         top_features = importance_df.head(n_features)
         
